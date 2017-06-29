@@ -8,19 +8,31 @@ import matplotlib.pyplot as plt
 import matplotlib.image as image
 
 # Import datasets, classifiers and performance metrics
-from sklearn import datasets, svm, tree, metrics
+from sklearn import datasets, svm, tree, metrics, neighbors
 from sklearn.preprocessing import label_binarize
 from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import NearestNeighbors
 
-verbose = False
-classifier_type="DecisionTree"
-#classifier_type="RandomForest"
-#classifier_type="NearestNeighbour"
-#classifier_type="SVM"
-#classifier_type="NeuralNet"
 allowed_residues = ['A','C','D','E','F','G','H','I','K','L','M','N','P','Q','R','S','T','V','W','Y']
+classifier_types = ['DecisionTree','RandomForest','AdaBoost','NearestNeighbour','SVM','NeuralNet']
+
+### options
+verbose = False
+classifier_type=classifier_types[1]
+infile = "ss_list_A_top100k.txt"
+
+class OligoPeptide():
+    '''
+    Class for a single oligopeptide, specified by a sequence string.
+    Methods for generating various feature vectors for the oligopeptide.
+    '''
+
+    def __init__(self, sequence):
+        self.oligo = list(sequence)
+
+    def binarize(self):
+        ''' converts a 7-residue oligopeptide string into a 140 binary feature vector'''
+        return label_binarize(self.oligo, classes=allowed_residues).reshape(-1)
 
 def ShowDecisionTree(estimator, X_test):
 
@@ -111,7 +123,6 @@ def ShowDecisionTree(estimator, X_test):
 
 ### start of main
 
-infile = "ss_list_A_top100k.txt"
 with open(infile) as f:
     data = []
     target = []
@@ -124,44 +135,50 @@ nitems = len(data)
 print "Total number of sequences = "+str(nitems)
 print data[nitems/2], target[nitems/2]
 
-# The following converts a 7-residue oligopeptide string into a 140 binary feature vector
-print "binarizing"
+# The following converts the oligopeptide strings into feature vectors
+print "Creating feature vectors"
 
-binary_data = []
+feature_v = []
 for oligopeptide in data:
-    #if oligopeptide[0:2] == 'AA':
-    #    print oligopeptide
-    peptides = list(oligopeptide)
-    binary_data.append(label_binarize(peptides, classes=allowed_residues).reshape(-1))
-print binary_data[nitems/2], target[nitems/2]
+    o = OligoPeptide(oligopeptide)
+    feature_v.append(o.binarize())
+print feature_v[nitems/2], target[nitems/2]
 
-print "Training"
+print "Training model using", classifier_type
 
 # Create a classifier: a support vector classifier
 if classifier_type == "DecisionTree":
     classifier = tree.DecisionTreeClassifier(max_depth=50,min_samples_leaf=1)
 elif classifier_type == "RandomForest":
-    classifier = RandomForestClassifier(n_estimators=10)
+    classifier = RandomForestClassifier(n_estimators=10,max_depth=50,min_samples_leaf=1)
 elif classifier_type == "NearestNeighbour":
-    classifier = NearestNeighbors()
+    classifier = neighbors.KNeighborsClassifier(n_neighbors=5, weights='uniform')
 elif classifier_type == "SVM":
     classifier = svm.SVC()
 elif classifier_type == "NeuralNet":
     classifier = MLPClassifier()
 
-# We learn the digits on the first half of the digits
-classifier.fit(binary_data[:nitems / 2], target[:nitems / 2])
+# We train the model on the first half of the sequence list
+classifier.fit(feature_v[:nitems / 2], target[:nitems / 2])
 
+# Analyse the trained model
 if classifier_type == "DecisionTree":
-    print "Show Decision Tree"
-    ShowDecisionTree(classifier, binary_data[nitems / 2: nitems])
+    print "\nShow Decision Tree"
+    ShowDecisionTree(classifier, feature_v[nitems / 2: nitems])
+elif classifier_type == "RandomForest":
+    print classifier.feature_importances_
+    for estimator in classifier.estimators_:
+        ShowDecisionTree(estimator, feature_v[nitems / 2: nitems])
+elif classifier_type == "NearestNeighbour":
+    print "\nParameters of Nearest Neighbor classifier"
+    print classifier.get_params()
 
-print "Predicting"
+print "\nPredicting"
 
-# Now predict the value of the digit on the second half:
+# Now test the model on the second half of the sequences:
 expected = target[nitems / 2: nitems]
-predicted = classifier.predict(binary_data[nitems / 2: nitems])
-score = classifier.score(binary_data[nitems / 2: nitems],  target[nitems / 2: nitems])
+predicted = classifier.predict(feature_v[nitems / 2: nitems])
+score = classifier.score(feature_v[nitems / 2: nitems],  target[nitems / 2: nitems])
 
 print "Predicting "+str(len(expected))+" items with score " + str(score)
 
